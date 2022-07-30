@@ -4,42 +4,57 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 )
 
-var loginFormTmpl = []byte(`
-<html>
-	<head>
-	<link rel="stylesheet" type="text/css" href="/static/MainPage.css">
-	</head>
-	<body>
-		<form action="/" class="ui-form" method="post">
-		<h3>Войти на сайт</h3>
-		<div class="form-row">
-		<input type="text" id="login" name="login" required autocomplete="off"><label for="login">Login</label>
-		</div>
-		<div class="form-row">
-		<input type="password" id="password" required autocomplete="off"><label for="password">Password</label>
-		</div>
-		<p><input type="submit" value="Войти"></p>
-		</form>
-	</body>
-</html>
-`)
 
 func mainPage(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		//w.Write(loginFormTmpl)
-		http.ServeFile(w, r, "sources/MainPage.html")
-		return
+	if r.Method == http.MethodPost {
+		expiration := time.Now().Add(10 * time.Hour)
+		cookie := http.Cookie{
+			Name: "session_id",
+			Value: r.FormValue("login"),
+			Expires: expiration,
+		}
+		http.SetCookie(w, &cookie)
+		http.Redirect(w, r, "/", http.StatusFound)
 	}
 
+	session, err := r.Cookie("session_id")
+	loggedIn := (err != http.ErrNoCookie)
+	if loggedIn {
+		fmt.Fprintln(w, `<a href="/logout">logout</a>`)
+		fmt.Fprintln(w, "Welcome, "+session.Value)
+	} else {
+		//fmt.Fprintln(w, `<a href="/login">login</a>`)
+		http.Redirect(w, r, "/login", http.StatusFound)
+	}
 
-	inputLogin := r.FormValue("login")
-	fmt.Fprintln(w, "you enter: ", inputLogin)
 }
+
+func loginPage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.ServeFile(w, r, "sources/loginPage.html")
+		return
+	}
+}
+
+func logoutPage(w http.ResponseWriter, r *http.Request) {
+	session, err := r.Cookie("session_id")
+	if err == http.ErrNoCookie {
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
+	session.Expires = time.Now().AddDate(0, 0, -1)
+	http.SetCookie(w, session)
+	http.Redirect(w, r, "/", http.StatusFound)
+}
+
 
 func main() {
 	http.HandleFunc("/", mainPage)
+	http.HandleFunc("/login", loginPage)
+	http.HandleFunc("/logout", logoutPage)
 
 	staticHandler := http.StripPrefix(
 		"/static/",
