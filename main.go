@@ -7,9 +7,19 @@ import (
 	"time"
 )
 
+var authentication = map[string]string{
+	"Walter":"asd",
+	"Anthony":"zxc",
+	"RandomGuy":"fgh",
+}
+
 
 func mainPage(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
+		if (authentication[r.FormValue("login")] != r.FormValue("password")){
+			http.Redirect(w, r, "/login", http.StatusFound)
+		}
+
 		expiration := time.Now().Add(10 * time.Hour)
 		cookie := http.Cookie{
 			Name: "session_id",
