@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"sort"
-	"strconv"
 	"time"
 )
 
@@ -26,14 +25,15 @@ type film struct {
 
 var database *sql.DB
 
-var films =[]film{
-	{1, "The Wolf Of Wall Street", 2013, "Martin Scorsese"},
-	{2, "The Hateful Eight", 2015, "Quentin Tarantino"},
-	{3, "Inception", 2010, "Christopher Nolan"},
-	{4, "The Departed", 2006, "Martin Scorsese"},
-	{5, "Enemy", 2013, "Denis Villeneuve"},
-	{6, "Nomadland", 2020, "Chloe Zhao"},
-}
+var HTMLOpen = []byte(`
+	<html>
+	<body>
+`)
+
+var HTMLClose = []byte(`
+	</body>
+	</html>
+`)
 
 var RBForm = []byte(`
 <form>
@@ -61,44 +61,23 @@ type movieList struct{
 	movies []film
 }
 
-func (mv movieList) sorted (metho string) []film{
-	if (metho == "name"){
+func (mv movieList) sorted (method string) []film{
+	if method == "name"{
 		sort.Slice(mv.movies, func(i, j int) bool {
 			return mv.movies[i].Name<mv.movies[j].Name
 		})
 	}
-	if (metho == "year"){
+	if method == "year"{
 		sort.Slice(mv.movies, func(i, j int) bool {
 			return mv.movies[i].Year<mv.movies[j].Year
 		})
 	}
-	if (metho == "director"){
+	if method == "director"{
 		sort.Slice(mv.movies, func(i, j int) bool {
 			return mv.movies[i].Director<mv.movies[j].Director
 		})
 	}
 	return mv.movies
-}
-
-func IndexHandler(w http.ResponseWriter, r *http.Request) {
-
-	rows, err := database.Query("select * from usersdb.users")
-	if err != nil {
-		log.Println(err)
-	}
-	defer rows.Close()
-	users := []User{}
-
-	for rows.Next(){
-		u := User{}
-		err := rows.Scan(&u.id, &u.login, &u.password)
-		if err != nil{
-			fmt.Println(err)
-			continue
-		}
-		users = append(users, u)
-	}
-	fmt.Fprintln(w, users)
 }
 
 func mainPage(w http.ResponseWriter, r *http.Request) {
@@ -148,7 +127,7 @@ func loginPage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func signupPage(w http.ResponseWriter, r *http.Request){
+func signUpPage(w http.ResponseWriter, r *http.Request){
 	http.ServeFile(w, r, "sources/signupPage.html")
 	return
 }
@@ -161,8 +140,10 @@ func registerPage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		login := r.FormValue("login")
-		row := database.QueryRow("select login from usersdb.users where login = ?", login)
+		u := User{}
+		u.login = r.FormValue("login")
+		u.password = r.FormValue("password")
+		row := database.QueryRow("select login from usersdb.users where login = ?", u.login)
 		err := row.Scan()
 		if err != nil {
 			fmt.Println(err)
@@ -173,14 +154,13 @@ func registerPage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		var id int
 		row = database.QueryRow("SELECT MAX(id) FROM users")
-		err = row.Scan(&id)
+		err = row.Scan(&u.id)
 		if err != nil {
 			fmt.Println(err)
 		}
-		id++
-		_, err = database.Exec("INSERT INTO users (id, login, uPassword) VALUES (?, ?, ?)", id, login, r.FormValue("password"))
+		u.id++
+		_, err = database.Exec("INSERT INTO users (id, login, uPassword) VALUES (?, ?, ?)", u.id, u.login, u.password)
 		if err != nil {
 			fmt.Println(err)
 		}
@@ -188,13 +168,15 @@ func registerPage(w http.ResponseWriter, r *http.Request) {
 		expiration := time.Now().Add(10 * time.Hour)
 		cookie := http.Cookie{
 			Name: "session_id",
-			Value: login,
+			Value: u.login,
 			Expires: expiration,
 		}
 		http.SetCookie(w, &cookie)
 		http.Redirect(w,r,"/", http.StatusFound)
 		return
 	}
+	http.Redirect(w,r,"/", http.StatusFound)
+	return
 }
 
 func logoutPage(w http.ResponseWriter, r *http.Request) {
@@ -209,25 +191,40 @@ func logoutPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func filmsPage(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte(`
-	<html>	
-	<body>
-`))
-	movies := movieList{films}
+	_, err := r.Cookie("session_id")
+	if err == http.ErrNoCookie {
+		http.Redirect(w, r, "/login", http.StatusFound)
+		return
+	}
+
+	w.Write(HTMLOpen)
+	rows, err := database.Query("Select * from usersdb.movies")
+	if err != nil {
+		fmt.Println(err)
+	}
+	defer rows.Close()
+	movies := movieList{}
+	for rows.Next(){
+		mv := film{}
+		err := rows.Scan(&mv.ID, &mv.Name, &mv.Director, &mv.Year)
+		if err != nil{
+			fmt.Println(err)
+			continue
+		}
+		movies.movies = append(movies.movies, mv)
+	}
+
 	method := r.FormValue("sortMethod")
-	if (r.FormValue("sortMethod") == ""){
+	if r.FormValue("sortMethod") == "" {
 		method = "name"
 	}
 	sortedMv := movies.sorted(method)
-	for i := 0; i<len(films); i++{
-		fmt.Fprintln(w, sortedMv[i].Name + " " + sortedMv[i].Director + " " + strconv.Itoa(sortedMv[i].Year))
+	for i := 0; i<len(movies.movies); i++{
+		fmt.Fprintln(w, sortedMv[i].Name + " " + sortedMv[i].Director + " ", sortedMv[i].Year)
 		w.Write([]byte(`<br>`))
 	}
 	w.Write(RBForm)
-	w.Write([]byte(`
-	</body>
-	</html>
-`))
+	w.Write(HTMLClose)
 }
 
 func main() {
@@ -238,9 +235,8 @@ func main() {
 	database = db
 
 	http.HandleFunc("/", mainPage)
-	http.HandleFunc("/index", IndexHandler)
 	http.HandleFunc("/login", loginPage)
-	http.HandleFunc("/signup", signupPage)
+	http.HandleFunc("/signup", signUpPage)
 	http.HandleFunc("/register", registerPage)
 	http.HandleFunc("/logout", logoutPage)
 	http.HandleFunc("/films", filmsPage)
