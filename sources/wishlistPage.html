@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Wishlist</title>
+</head>
+<body>
+<form id="deleteFilm"></form>
+{{range .FilmList}}
+    <input type="submit" form="deleteFilm" name="deleteFilm" value={{.ID}}>
+    {{.Name}} | {{.Director}} {{.Year}}
+    <br>
+{{end}}
+<form>
+    <p>Sort by:</p>
+    <div>
+        <input type="radio" id="sortChoice1"
+               name="sortMethod" value="name">
+        <label for="contactChoice1">Name</label>
+        <input type="radio" id="sortChoice2"
+               name="sortMethod" value="director">
+        <label for="contactChoice2">Director</label>
+        <input type="radio" id="sortChoice3"
+               name="sortMethod" value="year">
+        <label for="contactChoice3">Year</label>
+    </div>
+    <div>
+        <button type="submit">Sort</button>
+    </div>
+</form>
+<form>
+    <p>Choose between years:</p>
+    <div>
+        <input name="yearFrom" pattern="[0-9]{4}">
+        <b> - </b>
+        <input name="yearTo" pattern="[0-9]{4}">
+        <br><input type="submit" value="Filter">
+    </div>
+</form>
+<br>
+<a href="/">Главная страница</a>
+<br>
+<a href="/films">Все фильмы</a>
+<br>
+</body>
+</html>
