@@ -3,13 +3,15 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	_ "github.com/go-sql-driver/mysql"
+
 	"html/template"
 	"log"
 	"net/http"
 	"sort"
 	"strconv"
 	"time"
+
+	_ "github.com/go-sql-driver/mysql"
 )
 
 var database *sql.DB
@@ -146,7 +148,7 @@ func mainPage(w http.ResponseWriter, r *http.Request) {
 	loggedIn := err != http.ErrNoCookie
 	if loggedIn {
 		//writing html for authorized users
-		tmpl, err :=template.New("").ParseFiles("sources/mainPage.html")
+		tmpl, err := template.New("").ParseFiles("sources/mainPage.html")
 		if err != nil {
 			panic(err)
 		}
@@ -192,7 +194,7 @@ func registerPage(w http.ResponseWriter, r *http.Request) {
 		//checking if user already exists
 		row := database.QueryRow("select login from usersdb.users where login = ?", u.login)
 		err := row.Scan()
-		switch err{
+		switch err {
 		case nil:
 			fmt.Println("User already exists")
 			http.Redirect(w, r, "/signup", http.StatusFound)
@@ -304,7 +306,7 @@ func wishlistPage(w http.ResponseWriter, r *http.Request) {
 		panic(err)
 	}
 	tmplData := struct {
-		FilmList   []film
+		FilmList []film
 	}{
 		filteredMv,
 	}
@@ -388,6 +390,63 @@ func allFilmsPage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func testPage(w http.ResponseWriter, r *http.Request) {
+	//checking if authorized
+	session, err := r.Cookie("session_id")
+	if err == http.ErrNoCookie {
+		http.Redirect(w, r, "/login", http.StatusFound)
+		return
+	}
+	//collecting user's data
+	user := User{}
+	user.login = session.Value
+	row := database.QueryRow("SELECT id FROM usersdb.users WHERE login = ?", user.login)
+	row.Scan(&user.id)
+	//deleting movie from wishlist
+	deleteFilm, err := strconv.Atoi(r.FormValue("deleteFilm"))
+	if err == nil {
+		_, err = database.Exec("delete from usersdb.user_movie where userID = ? and movieID = ?;", user.id, deleteFilm)
+		if err != nil {
+			fmt.Println(err)
+		}
+	}
+	//getting movies from db and putting them into structure
+	rows, err := database.Query("SELECT movies.id, movies.name, movies.director, movies.year "+
+		"FROM usersdb.movies, usersdb.user_movie WHERE user_movie.userID = ? AND movies.id = user_movie.movieID",
+		user.id)
+	if err != nil {
+		fmt.Println(err)
+	}
+	defer rows.Close()
+	wishlist := movieList{}
+	for rows.Next() {
+		mv := film{}
+		err := rows.Scan(&mv.ID, &mv.Name, &mv.Director, &mv.Year)
+		if err != nil {
+			fmt.Println(err)
+			continue
+		}
+		wishlist.movies = append(wishlist.movies, mv)
+	}
+	//sorting and filtering movieList
+	wishlist.sorted(r.FormValue("sortMethod"))
+	filteredMv := wishlist.filtered(r.FormValue("yearFrom"), r.FormValue("yearTo"))
+	//Writing html file
+	tmpl, err := template.New("").ParseFiles("sources/wishlistPage.html")
+	if err != nil {
+		panic(err)
+	}
+	tmplData := struct {
+		FilmList []film
+	}{
+		filteredMv,
+	}
+	err = tmpl.ExecuteTemplate(w, "wishlistPage.html", tmplData)
+	if err != nil {
+		panic(err)
+	}
+}
+
 func main() {
 	db, err := sql.Open("mysql", "root:Riptide_Embassy73@/usersdb")
 	if err != nil {
@@ -404,7 +463,7 @@ func main() {
 	mux.HandleFunc("/deleteAccount", deleteAccountPage)
 	mux.HandleFunc("/films", allFilmsPage)
 	mux.HandleFunc("/wishlist", wishlistPage)
-	//mux.HandleFunc("/filmsTest", filmsTest)
+	mux.HandleFunc("/test", testPage)
 	staticHandler := http.StripPrefix(
 		"/static/",
 		http.FileServer(http.Dir("./sources")),
